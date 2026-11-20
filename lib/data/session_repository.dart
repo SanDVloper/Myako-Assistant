@@ -267,6 +267,34 @@ class SessionRepository {
     return rows.map(Flashcard.fromMap).toList(growable: false);
   }
 
+  /// Returns combined flashcards across multiple [sessionIds] for UTS/UAS prep.
+  Future<List<Flashcard>> getFlashcardsBySessionIds(List<int> sessionIds) async {
+    if (sessionIds.isEmpty) return const [];
+    final db = await _db;
+    final placeholders = List.filled(sessionIds.length, '?').join(', ');
+    final rows = await db.query(
+      'flashcards',
+      where: 'session_id IN ($placeholders)',
+      whereArgs: sessionIds,
+      orderBy: 'id ASC',
+    );
+    return rows.map(Flashcard.fromMap).toList(growable: false);
+  }
+
+  /// Updates mastery level (`0`: baru, `1`: perlu ulang, `2`: sudah paham).
+  Future<void> updateFlashcardMastery({
+    required int flashcardId,
+    required int masteryLevel,
+  }) async {
+    final db = await _db;
+    await db.update(
+      'flashcards',
+      {'mastery_level': masteryLevel},
+      where: 'id = ?',
+      whereArgs: [flashcardId],
+    );
+  }
+
   /// Returns multiple-choice quiz questions belonging to [sessionId].
   Future<List<QuizQuestion>> getQuizQuestionsBySession(int sessionId) async {
     final db = await _db;
