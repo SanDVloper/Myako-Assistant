@@ -6,7 +6,7 @@ plugins {
 
 android {
     namespace = "com.sandvloper.myako.myako"
-    compileSdk = flutter.compileSdkVersion
+    compileSdk = 36
     ndkVersion = flutter.ndkVersion
 
     compileOptions {
