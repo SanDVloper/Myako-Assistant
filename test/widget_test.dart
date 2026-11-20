@@ -18,6 +18,8 @@ import 'package:myako/screens/flashcard_study_screen.dart';
 import 'package:myako/screens/quiz_runner_screen.dart';
 import 'package:myako/services/ai_response_parser.dart';
 import 'package:myako/services/lecture_recorder_service.dart';
+import 'package:myako/services/semantic_embedding_service.dart';
+import 'package:myako/services/semantic_search_service.dart';
 import 'package:sqflite_common_ffi/sqflite_ffi.dart';
 
 class _InMemorySecureKeyStorage extends SecureKeyStorage {
@@ -64,6 +66,15 @@ class _InMemorySecureKeyStorage extends SecureKeyStorage {
   Future<void> saveThemeMode(String mode) async {
     _store['theme'] = mode;
   }
+}
+
+class _FakeSemanticEmbeddingService extends SemanticEmbeddingService {
+  _FakeSemanticEmbeddingService(super.keyStorage, {this.queryVector});
+
+  final Float32List? queryVector;
+
+  @override
+  Future<Float32List?> embedQuery(String query) async => queryVector;
 }
 
 void main() {
@@ -434,6 +445,106 @@ void main() {
       );
       final updatedCards = await sessionRepo.getFlashcardsBySession(s1.id!);
       expect(updatedCards.single.masteryLevel, 2);
+    });
+
+    test(
+        'SemanticSearchService computes cosine similarity, ranks vectors, and falls back offline',
+        () async {
+      // Pure math checks.
+      final v1 = Float32List.fromList([1.0, 0.0, 0.0]);
+      final v2 = Float32List.fromList([1.0, 0.0, 0.0]);
+      final vOrth = Float32List.fromList([0.0, 1.0, 0.0]);
+      final vShort = Float32List.fromList([1.0, 0.0]);
+      final vZero = Float32List.fromList([0.0, 0.0, 0.0]);
+
+      expect(SemanticSearchService.cosineSimilarity(v1, v2), closeTo(1.0, 1e-6));
+      expect(SemanticSearchService.cosineSimilarity(v1, vOrth), closeTo(0.0, 1e-6));
+      expect(SemanticSearchService.cosineSimilarity(v1, vShort), 0.0);
+      expect(SemanticSearchService.cosineSimilarity(v1, vZero), 0.0);
+
+      final sessionRepo = SessionRepository(testDb);
+      final active = await repo.getActiveSemester();
+      final course = await repo.createCourse(
+        semesterId: active!.id!,
+        name: 'Biologi Sel',
+        colorHex: '#10B981',
+      );
+      final session = await sessionRepo.createSession(
+        LectureSession(
+          courseId: course.id!,
+          title: 'Pembelahan Sel',
+          recordedAt: DateTime(2026, 11, 20, 8, 0),
+          audioPath: 'recordings/bio.m4a',
+        ),
+      );
+
+      await sessionRepo.saveAiProcessingResult(
+        sessionId: session.id!,
+        result: ParsedLectureAiResult(
+          summaryTldr: 'Perbedaan mitosis dan meiosis pada sel eukariotik.',
+          summaryPoints: const ['Mitosis menghasilkan 2 sel identik'],
+          whiteboardSynthesis: '',
+          glossary: const [],
+          actionItems: const [],
+          segments: [
+            TranscriptSegment(
+              sessionId: session.id!,
+              startMs: 10000,
+              endMs: 40000,
+              textContent: 'Mitosis terjadi pada sel somatik untuk pertumbuhan.',
+            ),
+            TranscriptSegment(
+              sessionId: session.id!,
+              startMs: 40000,
+              endMs: 70000,
+              textContent: 'Fotosintesis membutuhkan klorofil dan cahaya matahari.',
+            ),
+          ],
+          flashcards: const [],
+          quizzes: const [],
+        ),
+      );
+
+      final savedSegments =
+          await sessionRepo.getTranscriptSegmentsBySession(session.id!);
+      await sessionRepo.updateSegmentEmbeddings({
+        savedSegments[0].id!: Float32List.fromList([0.95, 0.05, 0.0]),
+        savedSegments[1].id!: Float32List.fromList([0.0, 1.0, 0.0]),
+      });
+
+      final searchable = await sessionRepo.getSearchableSegments();
+      expect(searchable.length, 2);
+      expect(searchable.first.courseName, 'Biologi Sel');
+
+      // 1. Vector similarity ranking.
+      final vectorSearch = SemanticSearchService(
+        sessionRepo,
+        _FakeSemanticEmbeddingService(
+          _InMemorySecureKeyStorage(),
+          queryVector: Float32List.fromList([1.0, 0.0, 0.0]),
+        ),
+      );
+      final vectorRes = await vectorSearch.search(
+        query: 'pembelahan sel tubuh',
+      );
+      expect(vectorRes.usedSemanticVectors, isTrue);
+      expect(vectorRes.hits.length, 1);
+      expect(vectorRes.hits.first.segment.startMs, 10000);
+
+      // 2. Offline lexical fallback when embedding query returns null.
+      final offlineSearch = SemanticSearchService(
+        sessionRepo,
+        _FakeSemanticEmbeddingService(
+          _InMemorySecureKeyStorage(),
+          queryVector: null,
+        ),
+      );
+      final offlineRes = await offlineSearch.search(
+        query: 'klorofil cahaya',
+      );
+      expect(offlineRes.usedSemanticVectors, isFalse);
+      expect(offlineRes.hits.length, 1);
+      expect(offlineRes.hits.first.segment.startMs, 40000);
     });
   });
 

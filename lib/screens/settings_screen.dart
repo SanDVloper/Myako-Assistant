@@ -591,6 +591,28 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
                 ),
               ],
             ),
+            const Divider(height: 20),
+            Row(
+              children: [
+                const Icon(Icons.memory_outlined, size: 20),
+                const SizedBox(width: 10),
+                const Expanded(
+                  child: Text(
+                    'Kosongkan cache gambar dari RAM bila HP terasa penuh.',
+                    style: TextStyle(fontSize: 12.5),
+                  ),
+                ),
+                const SizedBox(width: 8),
+                OutlinedButton(
+                  onPressed: () {
+                    PaintingBinding.instance.imageCache.clear();
+                    PaintingBinding.instance.imageCache.clearLiveImages();
+                    _showSnack('Cache gambar di RAM berhasil dibersihkan.');
+                  },
+                  child: const Text('Bersihkan Cache RAM'),
+                ),
+              ],
+            ),
           ],
         ),
       ),
