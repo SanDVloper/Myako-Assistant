@@ -8,6 +8,7 @@ import '../models/lecture_session.dart';
 import '../providers/app_providers.dart';
 import '../services/lecture_recorder_service.dart';
 import 'class_recorder_screen.dart';
+import 'exam_prep_screen.dart';
 import 'session_detail_screen.dart';
 
 /// Displays all recorded and imported lecture sessions for a [Course].
@@ -37,7 +38,13 @@ class CourseDetailScreen extends ConsumerWidget {
         children: [
           Padding(
             padding: const EdgeInsets.fromLTRB(16, 8, 16, 12),
-            child: _buildCourseHeaderCard(context, ref, accent, colorScheme),
+            child: _buildCourseHeaderCard(
+              context,
+              ref,
+              accent,
+              colorScheme,
+              sessionsAsync.value ?? const [],
+            ),
           ),
           Expanded(
             child: sessionsAsync.when(
@@ -88,6 +95,7 @@ class CourseDetailScreen extends ConsumerWidget {
     WidgetRef ref,
     Color accent,
     ColorScheme colorScheme,
+    List<LectureSession> sessions,
   ) {
     return Card(
       child: Padding(
@@ -151,6 +159,26 @@ class CourseDetailScreen extends ConsumerWidget {
                 ),
               ],
             ),
+            if (sessions.isNotEmpty) ...[
+              const SizedBox(height: 8),
+              SizedBox(
+                width: double.infinity,
+                child: FilledButton.tonalIcon(
+                  onPressed: () {
+                    Navigator.of(context).push(
+                      MaterialPageRoute<void>(
+                        builder: (_) => ExamPrepScreen(
+                          course: course,
+                          sessions: sessions,
+                        ),
+                      ),
+                    );
+                  },
+                  icon: const Icon(Icons.school_outlined, size: 18),
+                  label: const Text('Mode Persiapan UTS / UAS (Gabung Pertemuan)'),
+                ),
+              ),
+            ],
           ],
         ),
       ),

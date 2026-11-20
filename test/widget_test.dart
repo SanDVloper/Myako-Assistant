@@ -8,10 +8,14 @@ import 'package:myako/data/app_database.dart';
 import 'package:myako/data/course_repository.dart';
 import 'package:myako/data/session_repository.dart';
 import 'package:myako/main.dart';
+import 'package:myako/models/flashcard.dart';
 import 'package:myako/models/lecture_session.dart';
+import 'package:myako/models/quiz_question.dart';
 import 'package:myako/models/session_annotation.dart';
 import 'package:myako/models/transcript_segment.dart';
 import 'package:myako/providers/app_providers.dart';
+import 'package:myako/screens/flashcard_study_screen.dart';
+import 'package:myako/screens/quiz_runner_screen.dart';
 import 'package:myako/services/ai_response_parser.dart';
 import 'package:myako/services/lecture_recorder_service.dart';
 import 'package:sqflite_common_ffi/sqflite_ffi.dart';
@@ -333,6 +337,161 @@ void main() {
         1,
       );
     });
+
+    test(
+        'Multi-session UTS/UAS queries and flashcard mastery update work properly',
+        () async {
+      final sessionRepo = SessionRepository(testDb);
+      final active = await repo.getActiveSemester();
+      final course = await repo.createCourse(
+        semesterId: active!.id!,
+        name: 'Jaringan Komputer',
+        colorHex: '#10B981',
+      );
+      final s1 = await sessionRepo.createSession(
+        LectureSession(
+          courseId: course.id!,
+          title: 'Pertemuan 1',
+          recordedAt: DateTime(2026, 11, 20),
+          audioPath: 'recordings/j1.m4a',
+        ),
+      );
+      final s2 = await sessionRepo.createSession(
+        LectureSession(
+          courseId: course.id!,
+          title: 'Pertemuan 2',
+          recordedAt: DateTime(2026, 11, 21),
+          audioPath: 'recordings/j2.m4a',
+        ),
+      );
+
+      await sessionRepo.saveAiProcessingResult(
+        sessionId: s1.id!,
+        result: ParsedLectureAiResult(
+          summaryTldr: 'OSI',
+          summaryPoints: const [],
+          whiteboardSynthesis: '',
+          glossary: const [],
+          actionItems: const [],
+          segments: const [],
+          flashcards: [
+            Flashcard(
+              sessionId: s1.id!,
+              frontQuestion: 'Layer 3 OSI?',
+              backAnswer: 'Network Layer',
+            ),
+          ],
+          quizzes: [
+            QuizQuestion(
+              sessionId: s1.id!,
+              question: 'Protokol Layer 3?',
+              options: const ['IP', 'TCP', 'HTTP', 'ARP'],
+              correctIndex: 0,
+              explanation: 'IP bekerja di Network Layer.',
+            ),
+          ],
+        ),
+      );
+      await sessionRepo.saveAiProcessingResult(
+        sessionId: s2.id!,
+        result: ParsedLectureAiResult(
+          summaryTldr: 'TCP',
+          summaryPoints: const [],
+          whiteboardSynthesis: '',
+          glossary: const [],
+          actionItems: const [],
+          segments: const [],
+          flashcards: [
+            Flashcard(
+              sessionId: s2.id!,
+              frontQuestion: 'TCP handshake?',
+              backAnswer: 'SYN, SYN-ACK, ACK',
+            ),
+          ],
+          quizzes: [
+            QuizQuestion(
+              sessionId: s2.id!,
+              question: 'Port HTTPS?',
+              options: const ['80', '443', '22', '53'],
+              correctIndex: 1,
+              explanation: 'HTTPS berjalan di port 443.',
+            ),
+          ],
+        ),
+      );
+
+      final combinedCards =
+          await sessionRepo.getFlashcardsBySessionIds([s1.id!, s2.id!]);
+      expect(combinedCards.length, 2);
+
+      final combinedQuizzes =
+          await sessionRepo.getQuizQuestionsBySessionIds([s1.id!, s2.id!]);
+      expect(combinedQuizzes.length, 2);
+
+      await sessionRepo.updateFlashcardMastery(
+        flashcardId: combinedCards.first.id!,
+        masteryLevel: 2,
+      );
+      final updatedCards = await sessionRepo.getFlashcardsBySession(s1.id!);
+      expect(updatedCards.single.masteryLevel, 2);
+    });
+  });
+
+  testWidgets('FlashcardStudyScreen flips card and QuizRunnerScreen grades answer',
+      (tester) async {
+    await tester.pumpWidget(
+      ProviderScope(
+        child: MaterialApp(
+          home: FlashcardStudyScreen(
+            title: 'Latihan Kartu',
+            initialCards: const [
+              Flashcard(
+                sessionId: 1,
+                frontQuestion: 'Apa itu Polymorphism?',
+                backAnswer: 'Kemampuan objek mengambil banyak bentuk.',
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+
+    expect(find.text('Apa itu Polymorphism?'), findsOneWidget);
+    expect(find.text('Kemampuan objek mengambil banyak bentuk.'), findsNothing);
+
+    await tester.tap(find.text('Apa itu Polymorphism?'));
+    await tester.pumpAndSettle();
+
+    expect(find.text('Kemampuan objek mengambil banyak bentuk.'), findsOneWidget);
+
+    await tester.pumpWidget(
+      const MaterialApp(
+        home: QuizRunnerScreen(
+          title: 'Kuis Uji',
+          questions: [
+            QuizQuestion(
+              sessionId: 1,
+              question: 'Kompleksitas binary search?',
+              options: ['O(n)', 'O(log n)', 'O(n^2)', 'O(1)'],
+              correctIndex: 1,
+              explanation: 'Binary search membagi ruang pencarian menjadi dua tiap langkah.',
+            ),
+          ],
+        ),
+      ),
+    );
+
+    await tester.tap(find.text('O(log n)'));
+    await tester.pumpAndSettle();
+
+    expect(find.text('Pembahasan'), findsOneWidget);
+    expect(find.text('Benar: 1'), findsOneWidget);
+
+    await tester.tap(find.text('Lihat Skor Akhir'));
+    await tester.pumpAndSettle();
+
+    expect(find.text('100'), findsOneWidget);
+    expect(find.text('Sangat Siap Ujian'), findsOneWidget);
   });
 
   testWidgets('MyakoApp renders HomeScreen in Dark Mode by default',
