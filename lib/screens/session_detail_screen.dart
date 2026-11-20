@@ -15,6 +15,8 @@ import '../providers/app_providers.dart';
 import '../services/ai_response_parser.dart';
 import '../services/lecture_recorder_service.dart';
 import '../widgets/synced_audio_player_bar.dart';
+import 'flashcard_study_screen.dart';
+import 'quiz_runner_screen.dart';
 import 'settings_screen.dart';
 
 /// Workspace screen for a lecture session displaying AI summaries,
@@ -728,31 +730,136 @@ class _SessionDetailScreenState extends ConsumerState<SessionDetailScreen>
       );
     }
 
+    final mastered = flashcards.where((c) => c.masteryLevel == 2).length;
+
     return ListView(
       padding: const EdgeInsets.all(16),
       children: [
         Card(
-          child: ListTile(
-            leading: Icon(Icons.style_outlined, color: colorScheme.primary),
-            title: Text('${flashcards.length} Flashcard Tersedia'),
-            subtitle: const Text(
-              'Mode latihan balik kartu interaktif hadir di Part 4.',
+          child: Padding(
+            padding: const EdgeInsets.all(14),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                Row(
+                  children: [
+                    Icon(Icons.style_outlined, color: colorScheme.primary),
+                    const SizedBox(width: 10),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            '${flashcards.length} Flashcard',
+                            style: const TextStyle(
+                              fontWeight: FontWeight.w600,
+                              fontSize: 15,
+                            ),
+                          ),
+                          Text(
+                            '$mastered sudah paham • ${flashcards.length - mastered} perlu diulang',
+                            style: TextStyle(
+                              fontSize: 12,
+                              color: colorScheme.onSurfaceVariant,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 12),
+                FilledButton.icon(
+                  onPressed: flashcards.isEmpty
+                      ? null
+                      : () {
+                          Navigator.of(context).push(
+                            MaterialPageRoute<void>(
+                              builder: (_) => FlashcardStudyScreen(
+                                title: 'Flashcard Sesi',
+                                initialCards: flashcards,
+                                singleSessionId: _sessionId,
+                              ),
+                            ),
+                          );
+                        },
+                  icon: const Icon(Icons.play_circle_outline),
+                  label: const Text('Mulai Latihan Flashcard'),
+                ),
+              ],
             ),
           ),
         ),
-        const SizedBox(height: 10),
+        const SizedBox(height: 12),
         Card(
-          child: ListTile(
-            leading: Icon(Icons.quiz_outlined, color: colorScheme.secondary),
-            title: Text('${quizzes.length} Soal Kuis Tersedia'),
-            subtitle: const Text(
-              'Mode kuis pilihan ganda & UTS/UAS hadir di Part 4.',
+          child: Padding(
+            padding: const EdgeInsets.all(14),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                Row(
+                  children: [
+                    Icon(Icons.quiz_outlined, color: colorScheme.secondary),
+                    const SizedBox(width: 10),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            '${quizzes.length} Soal Kuis Pilihan Ganda',
+                            style: const TextStyle(
+                              fontWeight: FontWeight.w600,
+                              fontSize: 15,
+                            ),
+                          ),
+                          Text(
+                            'Latihan soal lengkap dengan skor dan pembahasan',
+                            style: TextStyle(
+                              fontSize: 12,
+                              color: colorScheme.onSurfaceVariant,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 12),
+                FilledButton.tonalIcon(
+                  onPressed: quizzes.isEmpty
+                      ? null
+                      : () {
+                          Navigator.of(context).push(
+                            MaterialPageRoute<void>(
+                              builder: (_) => QuizRunnerScreen(
+                                title: 'Kuis Sesi',
+                                questions: quizzes,
+                              ),
+                            ),
+                          );
+                        },
+                  icon: const Icon(Icons.assignment_outlined),
+                  label: const Text('Mulai Kuis Singkat'),
+                ),
+              ],
             ),
           ),
         ),
-        const SizedBox(height: 14),
-        ...flashcards.take(3).map(
-              (card) => Padding(
+        const SizedBox(height: 16),
+        if (flashcards.isNotEmpty) ...[
+          const Text(
+            'Daftar Kartu Tanya-Jawab',
+            style: TextStyle(fontWeight: FontWeight.w600, fontSize: 13.5),
+          ),
+          const SizedBox(height: 8),
+          ...flashcards.map(
+            (card) {
+              final (badgeText, badgeColor) = switch (card.masteryLevel) {
+                2 => ('Paham', colorScheme.primary),
+                1 => ('Perlu Ulang', Colors.amber),
+                _ => ('Baru', colorScheme.onSurfaceVariant),
+              };
+              return Padding(
                 padding: const EdgeInsets.only(bottom: 8),
                 child: Card(
                   child: Padding(
@@ -760,9 +867,37 @@ class _SessionDetailScreenState extends ConsumerState<SessionDetailScreen>
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                        Text(
-                          card.frontQuestion,
-                          style: const TextStyle(fontWeight: FontWeight.w600),
+                        Row(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Expanded(
+                              child: Text(
+                                card.frontQuestion,
+                                style: const TextStyle(
+                                  fontWeight: FontWeight.w600,
+                                ),
+                              ),
+                            ),
+                            const SizedBox(width: 8),
+                            Container(
+                              padding: const EdgeInsets.symmetric(
+                                horizontal: 8,
+                                vertical: 2,
+                              ),
+                              decoration: BoxDecoration(
+                                color: badgeColor.withValues(alpha: 0.14),
+                                borderRadius: BorderRadius.circular(12),
+                              ),
+                              child: Text(
+                                badgeText,
+                                style: TextStyle(
+                                  fontSize: 10.5,
+                                  fontWeight: FontWeight.w600,
+                                  color: badgeColor,
+                                ),
+                              ),
+                            ),
+                          ],
                         ),
                         const SizedBox(height: 4),
                         Text(
@@ -776,8 +911,10 @@ class _SessionDetailScreenState extends ConsumerState<SessionDetailScreen>
                     ),
                   ),
                 ),
-              ),
-            ),
+              );
+            },
+          ),
+        ],
       ],
     );
   }

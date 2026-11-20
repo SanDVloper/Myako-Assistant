@@ -307,6 +307,22 @@ class SessionRepository {
     return rows.map(QuizQuestion.fromMap).toList(growable: false);
   }
 
+  /// Returns combined quiz questions across multiple [sessionIds] for UTS/UAS prep.
+  Future<List<QuizQuestion>> getQuizQuestionsBySessionIds(
+    List<int> sessionIds,
+  ) async {
+    if (sessionIds.isEmpty) return const [];
+    final db = await _db;
+    final placeholders = List.filled(sessionIds.length, '?').join(', ');
+    final rows = await db.query(
+      'quiz_questions',
+      where: 'session_id IN ($placeholders)',
+      whereArgs: sessionIds,
+      orderBy: 'id ASC',
+    );
+    return rows.map(QuizQuestion.fromMap).toList(growable: false);
+  }
+
   Future<void> _deleteFileIfExists(String? path) async {
     if (path == null || path.isEmpty) return;
     try {
