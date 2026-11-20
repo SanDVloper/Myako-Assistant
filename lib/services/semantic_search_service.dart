@@ -92,17 +92,23 @@ class SemanticSearchService {
     final usedVectors = queryVector != null;
 
     for (final rec in records) {
-      final lexical = _lexicalScore(
+      final segLexical = _tokenMatchRatio(
         normalizedQuery: normalizedQuery,
         queryTokens: queryTokens,
-        record: rec,
+        targetText: rec.segment.textContent,
+      );
+      final metaLexical = _tokenMatchRatio(
+        normalizedQuery: normalizedQuery,
+        queryTokens: queryTokens,
+        targetText: '${rec.session.title} ${rec.session.summaryTldr ?? ''}',
       );
 
       final segEmbedding = rec.segment.embedding;
       if (usedVectors && segEmbedding != null) {
         final sim = cosineSimilarity(queryVector, segEmbedding);
-        final combined = (sim + (lexical * 0.12)).clamp(0.0, 1.0);
-        if (sim >= 0.22 || lexical > 0.0) {
+        if (sim >= 0.22 || segLexical > 0.0) {
+          final combined =
+              (sim + (segLexical * 0.12) + (metaLexical * 0.03)).clamp(0.0, 1.0);
           hits.add(
             SemanticSearchHit(
               segment: rec.segment,
@@ -114,14 +120,16 @@ class SemanticSearchService {
             ),
           );
         }
-      } else if (lexical > 0.0) {
+      } else if (segLexical > 0.0 || metaLexical > 0.0) {
+        final offlineScore =
+            ((segLexical * 0.8) + (metaLexical * 0.2)).clamp(0.0, 1.0);
         hits.add(
           SemanticSearchHit(
             segment: rec.segment,
             session: rec.session,
             courseName: rec.courseName,
             courseColorHex: rec.courseColorHex,
-            score: lexical,
+            score: offlineScore,
             isSemanticMatch: false,
           ),
         );
@@ -146,32 +154,28 @@ class SemanticSearchService {
         .toList(growable: false);
   }
 
-  double _lexicalScore({
+  double _tokenMatchRatio({
     required String normalizedQuery,
     required List<String> queryTokens,
-    required SearchableSegmentRecord record,
+    required String targetText,
   }) {
-    final segLower = record.segment.textContent.toLowerCase();
-    final titleLower = record.session.title.toLowerCase();
-    final tldrLower = (record.session.summaryTldr ?? '').toLowerCase();
+    final targetLower = targetText.toLowerCase();
     final queryLower = normalizedQuery.toLowerCase();
 
     if (queryTokens.isEmpty) {
-      return segLower.contains(queryLower) ? 1.0 : 0.0;
+      return targetLower.contains(queryLower) ? 1.0 : 0.0;
     }
 
     var matched = 0;
     for (final token in queryTokens) {
-      if (segLower.contains(token) ||
-          titleLower.contains(token) ||
-          tldrLower.contains(token)) {
+      if (targetLower.contains(token)) {
         matched++;
       }
     }
 
     if (matched == 0) return 0.0;
     var score = matched / queryTokens.length;
-    if (segLower.contains(queryLower)) {
+    if (targetLower.contains(queryLower)) {
       score = (score + 0.25).clamp(0.0, 1.0);
     }
     return score;
