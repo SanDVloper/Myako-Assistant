@@ -1,5 +1,6 @@
 import 'dart:convert';
 import 'dart:io';
+import 'dart:typed_data';
 
 import 'package:sqflite/sqflite.dart';
 
@@ -10,6 +11,21 @@ import '../models/session_annotation.dart';
 import '../models/transcript_segment.dart';
 import '../services/ai_response_parser.dart';
 import 'app_database.dart';
+
+/// Joined transcript segment with parent session and course metadata for search.
+class SearchableSegmentRecord {
+  const SearchableSegmentRecord({
+    required this.segment,
+    required this.session,
+    required this.courseName,
+    required this.courseColorHex,
+  });
+
+  final TranscriptSegment segment;
+  final LectureSession session;
+  final String courseName;
+  final String courseColorHex;
+}
 
 /// Repository managing [LectureSession] and timestamped [SessionAnnotation] records.
 class SessionRepository {
@@ -321,6 +337,76 @@ class SessionRepository {
       orderBy: 'id ASC',
     );
     return rows.map(QuizQuestion.fromMap).toList(growable: false);
+  }
+
+  // ---------------------------------------------------------------------------
+  // Semantic Embedding Storage & Search Queries
+  // ---------------------------------------------------------------------------
+
+  /// Persists compact Float32 embedding BLOBs for processed transcript segments.
+  Future<void> updateSegmentEmbeddings(
+    Map<int, Float32List> embeddingsBySegmentId,
+  ) async {
+    if (embeddingsBySegmentId.isEmpty) return;
+    final db = await _db;
+    final batch = db.batch();
+    for (final entry in embeddingsBySegmentId.entries) {
+      final blob = TranscriptSegment.embeddingToBlob(entry.value);
+      if (blob == null) continue;
+      batch.update(
+        'transcript_segments',
+        {'embedding': blob},
+        where: 'id = ?',
+        whereArgs: [entry.key],
+      );
+    }
+    await batch.commit(noResult: true);
+  }
+
+  /// Fetches all searchable transcript segments joined with session & course info.
+  Future<List<SearchableSegmentRecord>> getSearchableSegments({
+    int? courseId,
+  }) async {
+    final db = await _db;
+    final whereClause = courseId != null ? 'WHERE ls.course_id = ?' : '';
+    final args = courseId != null ? <Object?>[courseId] : const <Object?>[];
+
+    final rows = await db.rawQuery('''
+      SELECT
+        ls.*,
+        c.name AS course_name,
+        c.color_hex AS course_color_hex,
+        ts.id AS seg_id,
+        ts.session_id AS seg_session_id,
+        ts.start_ms AS seg_start_ms,
+        ts.end_ms AS seg_end_ms,
+        ts.text_content AS seg_text_content,
+        ts.embedding AS seg_embedding
+      FROM transcript_segments ts
+      INNER JOIN lecture_sessions ls ON ls.id = ts.session_id
+      INNER JOIN courses c ON c.id = ls.course_id
+      $whereClause
+      ORDER BY ls.id DESC, ts.start_ms ASC
+    ''', args);
+
+    return rows.map((row) {
+      final session = LectureSession.fromMap(row);
+      final segment = TranscriptSegment(
+        id: row['seg_id'] as int?,
+        sessionId: row['seg_session_id'] as int,
+        startMs: row['seg_start_ms'] as int,
+        endMs: row['seg_end_ms'] as int,
+        textContent: row['seg_text_content'] as String,
+        embedding:
+            TranscriptSegment.blobToEmbedding(row['seg_embedding'] as Uint8List?),
+      );
+      return SearchableSegmentRecord(
+        segment: segment,
+        session: session,
+        courseName: row['course_name'] as String,
+        courseColorHex: row['course_color_hex'] as String,
+      );
+    }).toList(growable: false);
   }
 
   Future<void> _deleteFileIfExists(String? path) async {
