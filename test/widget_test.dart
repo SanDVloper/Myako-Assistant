@@ -12,6 +12,7 @@ import 'package:myako/models/lecture_session.dart';
 import 'package:myako/models/session_annotation.dart';
 import 'package:myako/models/transcript_segment.dart';
 import 'package:myako/providers/app_providers.dart';
+import 'package:myako/services/ai_response_parser.dart';
 import 'package:myako/services/lecture_recorder_service.dart';
 import 'package:sqflite_common_ffi/sqflite_ffi.dart';
 
@@ -243,6 +244,94 @@ void main() {
       expect(LectureRecorderService.formatDurationMs(0), '00:00');
       expect(LectureRecorderService.formatDurationMs(65000), '01:05');
       expect(LectureRecorderService.formatDurationMs(3661000), '01:01:01');
+    });
+
+    test('AiResponseParser parses markdown-wrapped JSON and persists to SQLite',
+        () async {
+      final sessionRepo = SessionRepository(testDb);
+      final active = await repo.getActiveSemester();
+      final course = await repo.createCourse(
+        semesterId: active!.id!,
+        name: 'Sistem Operasi',
+        colorHex: '#A78BFA',
+      );
+      final session = await sessionRepo.createSession(
+        LectureSession(
+          courseId: course.id!,
+          title: 'Deadlock & Semaphore',
+          recordedAt: DateTime(2026, 11, 20, 10, 0),
+          durationMs: 120000,
+          audioPath: 'recordings/os.m4a',
+        ),
+      );
+
+      const rawAiResponse = '''
+```json
+{
+  "summary_tldr": "Membahas empat syarat terjadinya deadlock dan pencegahannya memakai semaphore.",
+  "summary_points": [
+    "Mutual Exclusion dan Hold and Wait memicu deadlock.",
+    "Banker algorithm mencegah unsafe state."
+  ],
+  "whiteboard_synthesis": "Diagram resource allocation graph pada papan tulis memperlihatkan siklus P1 -> R1 -> P2.",
+  "glossary": [
+    {"term": "Deadlock", "definition": "Kondisi saling tunggu permanen antar proses."}
+  ],
+  "action_items": [
+    "Kumpulkan tugas sinkronisasi minggu depan."
+  ],
+  "transcript_segments": [
+    {"start_ms": 0, "end_ms": 30000, "text": "Hari ini kita membahas deadlock pada sistem operasi."},
+    {"start_ms": 30000, "end_ms": 60000, "text": "Empat kondisi Coffman harus terpenuhi bersamaan."}
+  ],
+  "flashcards": [
+    {"front": "Apa fungsi Semaphore?", "back": "Mengontrol akses resource bersama oleh banyak thread."}
+  ],
+  "quiz_questions": [
+    {
+      "question": "Manakah syarat terjadinya deadlock?",
+      "options": ["Circular Wait", "Round Robin", "Paging", "Caching"],
+      "correct_index": 0,
+      "explanation": "Circular Wait adalah salah satu dari 4 kondisi Coffman."
+    }
+  ]
+}
+```
+''';
+
+      final parsed =
+          AiResponseParser.parse(rawAiResponse, sessionId: session.id!);
+      expect(parsed.summaryPoints.length, 2);
+      expect(parsed.glossary.single.term, 'Deadlock');
+      expect(parsed.segments.length, 2);
+      expect(parsed.flashcards.single.frontQuestion, 'Apa fungsi Semaphore?');
+      expect(parsed.quizzes.single.correctIndex, 0);
+
+      await sessionRepo.saveAiProcessingResult(
+        sessionId: session.id!,
+        result: parsed,
+      );
+
+      final updatedSession = await sessionRepo.getSessionById(session.id!);
+      expect(updatedSession!.statusEnum, AiProcessingStatus.completed);
+      expect(
+        AiResponseParser.decodeGlossary(updatedSession.glossaryJson)
+            .single
+            .term,
+        'Deadlock',
+      );
+      expect(
+        (await sessionRepo.getTranscriptSegmentsBySession(session.id!)).length,
+        2,
+      );
+      expect(
+        (await sessionRepo.getFlashcardsBySession(session.id!)).length,
+        1,
+      );
+      expect(
+        (await sessionRepo.getQuizQuestionsBySession(session.id!)).length,
+        1,
+      );
     });
   });
 

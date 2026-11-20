@@ -1,17 +1,14 @@
-import 'dart:io';
-
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:image_picker/image_picker.dart';
 import 'package:intl/intl.dart';
 
 import '../core/theme/app_theme.dart';
 import '../models/course.dart';
 import '../models/lecture_session.dart';
-import '../models/session_annotation.dart';
 import '../providers/app_providers.dart';
 import '../services/lecture_recorder_service.dart';
 import 'class_recorder_screen.dart';
+import 'session_detail_screen.dart';
 
 /// Displays all recorded and imported lecture sessions for a [Course].
 class CourseDetailScreen extends ConsumerWidget {
@@ -236,10 +233,13 @@ class CourseDetailScreen extends ConsumerWidget {
     LectureSession session,
   ) async {
     if (session.id == null) return;
-    await showModalBottomSheet<void>(
-      context: context,
-      isScrollControlled: true,
-      builder: (_) => _SessionPreviewSheet(session: session),
+    await Navigator.of(context).push<void>(
+      MaterialPageRoute<void>(
+        builder: (_) => SessionDetailScreen(
+          initialSession: session,
+          course: course,
+        ),
+      ),
     );
   }
 
@@ -433,229 +433,5 @@ class _SessionCard extends StatelessWidget {
         ),
       ),
     );
-  }
-}
-
-class _SessionPreviewSheet extends ConsumerWidget {
-  const _SessionPreviewSheet({required this.session});
-
-  final LectureSession session;
-
-  @override
-  Widget build(BuildContext context, WidgetRef ref) {
-    final sessionId = session.id!;
-    final annotationsAsync = ref.watch(sessionAnnotationsProvider(sessionId));
-    final colorScheme = Theme.of(context).colorScheme;
-
-    return DraggableScrollableSheet(
-      expand: false,
-      initialChildSize: 0.65,
-      minChildSize: 0.4,
-      maxChildSize: 0.9,
-      builder: (_, scrollController) {
-        return Padding(
-          padding: const EdgeInsets.fromLTRB(16, 12, 16, 16),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: [
-              Center(
-                child: Container(
-                  width: 36,
-                  height: 4,
-                  decoration: BoxDecoration(
-                    color: colorScheme.onSurfaceVariant.withValues(alpha: 0.4),
-                    borderRadius: BorderRadius.circular(2),
-                  ),
-                ),
-              ),
-              const SizedBox(height: 12),
-              Text(
-                session.title,
-                style: const TextStyle(
-                  fontSize: 16,
-                  fontWeight: FontWeight.w600,
-                ),
-              ),
-              const SizedBox(height: 6),
-              Text(
-                'Durasi ${LectureRecorderService.formatDurationMs(session.durationMs)} • File lokal tersimpan aman',
-                style: TextStyle(
-                  fontSize: 12,
-                  color: colorScheme.onSurfaceVariant,
-                ),
-              ),
-              const SizedBox(height: 12),
-              Row(
-                children: [
-                  Expanded(
-                    child: OutlinedButton.icon(
-                      onPressed: () => _addPostNote(context, ref, sessionId),
-                      icon: const Icon(Icons.note_add_outlined, size: 18),
-                      label: const Text('Tambah Catatan'),
-                    ),
-                  ),
-                  const SizedBox(width: 8),
-                  Expanded(
-                    child: OutlinedButton.icon(
-                      onPressed: () => _addPostPhoto(context, ref, sessionId),
-                      icon: const Icon(Icons.add_a_photo_outlined, size: 18),
-                      label: const Text('Tambah Foto'),
-                    ),
-                  ),
-                ],
-              ),
-              const SizedBox(height: 10),
-              FilledButton.icon(
-                onPressed: () {
-                  ScaffoldMessenger.of(context)
-                    ..hideCurrentSnackBar()
-                    ..showSnackBar(
-                      const SnackBar(
-                        content: Text(
-                          'Pemrosesan AI Multimodal (Transkrip, Vision Papan Tulis, Rangkuman) & Audio Sync akan diaktifkan pada Part 3.',
-                        ),
-                      ),
-                    );
-                },
-                icon: const Icon(Icons.auto_awesome),
-                label: const Text('Proses dengan AI (Part 3)'),
-              ),
-              const SizedBox(height: 12),
-              const Text(
-                'Anotasi & Foto Papan Tulis',
-                style: TextStyle(fontWeight: FontWeight.w600, fontSize: 13.5),
-              ),
-              const SizedBox(height: 6),
-              Expanded(
-                child: annotationsAsync.when(
-                  loading: () =>
-                      const Center(child: CircularProgressIndicator()),
-                  error: (err, _) => Text('Gagal memuat anotasi: $err'),
-                  data: (items) {
-                    if (items.isEmpty) {
-                      return Center(
-                        child: Text(
-                          'Belum ada catatan manual atau foto papan tulis pada sesi ini.',
-                          textAlign: TextAlign.center,
-                          style: TextStyle(
-                            fontSize: 12.5,
-                            color: colorScheme.onSurfaceVariant,
-                          ),
-                        ),
-                      );
-                    }
-                    return ListView.separated(
-                      controller: scrollController,
-                      itemCount: items.length,
-                      separatorBuilder: (_, _) => const SizedBox(height: 8),
-                      itemBuilder: (_, index) {
-                        final item = items[index];
-                        final time = LectureRecorderService.formatDurationMs(
-                          item.timestampMs,
-                        );
-                        return Card(
-                          child: ListTile(
-                            leading: item.typeEnum == AnnotationType.photo &&
-                                    item.imagePath != null
-                                ? ClipRRect(
-                                    borderRadius: BorderRadius.circular(6),
-                                    child: Image.file(
-                                      File(item.imagePath!),
-                                      width: 44,
-                                      height: 44,
-                                      cacheWidth: 120,
-                                      fit: BoxFit.cover,
-                                      errorBuilder: (_, _, _) =>
-                                          const Icon(Icons.image_not_supported),
-                                    ),
-                                  )
-                                : Icon(
-                                    item.typeEnum == AnnotationType.bookmark
-                                        ? Icons.bookmark_outline
-                                        : Icons.notes,
-                                  ),
-                            title: Text(
-                              item.typeEnum == AnnotationType.photo
-                                  ? (item.contentText ?? 'Foto Papan Tulis / Slide')
-                                  : (item.contentText ?? ''),
-                              style: const TextStyle(fontSize: 13),
-                            ),
-                            subtitle: Text(
-                              'Menit $time',
-                              style: const TextStyle(
-                                fontFamily: 'monospace',
-                                fontSize: 11.5,
-                              ),
-                            ),
-                          ),
-                        );
-                      },
-                    );
-                  },
-                ),
-              ),
-            ],
-          ),
-        );
-      },
-    );
-  }
-
-  Future<void> _addPostNote(
-    BuildContext context,
-    WidgetRef ref,
-    int sessionId,
-  ) async {
-    final controller = TextEditingController();
-    final saved = await showDialog<bool>(
-      context: context,
-      builder: (dialogContext) => AlertDialog(
-        title: const Text('Tambah Catatan'),
-        content: TextField(
-          controller: controller,
-          autofocus: true,
-          maxLines: 3,
-          decoration: const InputDecoration(
-            hintText: 'Tulis catatan tambahan untuk sesi ini...',
-          ),
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(dialogContext, false),
-            child: const Text('Batal'),
-          ),
-          FilledButton(
-            onPressed: () => Navigator.pop(dialogContext, true),
-            child: const Text('Simpan'),
-          ),
-        ],
-      ),
-    );
-    if (saved == true && controller.text.trim().isNotEmpty) {
-      await ref.read(whiteboardCaptureServiceProvider).addQuickTextNote(
-            sessionId: sessionId,
-            timestampMs: 0,
-            text: controller.text.trim(),
-          );
-      ref.invalidate(sessionAnnotationsProvider(sessionId));
-    }
-    controller.dispose();
-  }
-
-  Future<void> _addPostPhoto(
-    BuildContext context,
-    WidgetRef ref,
-    int sessionId,
-  ) async {
-    final created =
-        await ref.read(whiteboardCaptureServiceProvider).captureAndSavePhoto(
-              sessionId: sessionId,
-              timestampMs: 0,
-              source: ImageSource.gallery,
-            );
-    if (created != null) {
-      ref.invalidate(sessionAnnotationsProvider(sessionId));
-      ref.invalidate(storageUsageBytesProvider);
-    }
   }
 }

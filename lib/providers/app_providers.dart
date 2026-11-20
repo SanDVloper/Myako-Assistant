@@ -6,9 +6,13 @@ import '../data/app_database.dart';
 import '../data/course_repository.dart';
 import '../data/session_repository.dart';
 import '../models/course.dart';
+import '../models/flashcard.dart';
 import '../models/lecture_session.dart';
+import '../models/quiz_question.dart';
 import '../models/semester.dart';
 import '../models/session_annotation.dart';
+import '../models/transcript_segment.dart';
+import '../services/ai_lecture_processor_service.dart';
 import '../services/audio_import_service.dart';
 import '../services/whiteboard_capture_service.dart';
 
@@ -271,4 +275,38 @@ final courseSessionsProvider =
 final sessionAnnotationsProvider =
     FutureProvider.family<List<SessionAnnotation>, int>((ref, sessionId) {
   return ref.read(sessionRepositoryProvider).getAnnotationsBySession(sessionId);
+});
+
+/// Multimodal AI processor service (Gemini 2.5 Flash / Groq).
+final aiLectureProcessorServiceProvider =
+    Provider<AiLectureProcessorService>((ref) {
+  return AiLectureProcessorService(ref.watch(secureKeyStorageProvider));
+});
+
+/// Single lecture session record by ID.
+final sessionByIdProvider =
+    FutureProvider.family<LectureSession?, int>((ref, sessionId) {
+  return ref.read(sessionRepositoryProvider).getSessionById(sessionId);
+});
+
+/// Transcript segments belonging to a specific session ID.
+final sessionTranscriptProvider =
+    FutureProvider.family<List<TranscriptSegment>, int>((ref, sessionId) {
+  return ref
+      .read(sessionRepositoryProvider)
+      .getTranscriptSegmentsBySession(sessionId);
+});
+
+/// Study flashcards belonging to a specific session ID.
+final sessionFlashcardsProvider =
+    FutureProvider.family<List<Flashcard>, int>((ref, sessionId) {
+  return ref.read(sessionRepositoryProvider).getFlashcardsBySession(sessionId);
+});
+
+/// Multiple-choice quiz questions belonging to a specific session ID.
+final sessionQuizzesProvider =
+    FutureProvider.family<List<QuizQuestion>, int>((ref, sessionId) {
+  return ref
+      .read(sessionRepositoryProvider)
+      .getQuizQuestionsBySession(sessionId);
 });
