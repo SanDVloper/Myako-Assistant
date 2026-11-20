@@ -14,6 +14,8 @@ import '../models/session_annotation.dart';
 import '../models/transcript_segment.dart';
 import '../services/ai_lecture_processor_service.dart';
 import '../services/audio_import_service.dart';
+import '../services/semantic_embedding_service.dart';
+import '../services/semantic_search_service.dart';
 import '../services/whiteboard_capture_service.dart';
 
 /// Singleton database provider.
@@ -309,4 +311,18 @@ final sessionQuizzesProvider =
   return ref
       .read(sessionRepositoryProvider)
       .getQuizQuestionsBySession(sessionId);
+});
+
+/// Service generating compact Float32 embeddings via `text-embedding-004`.
+final semanticEmbeddingServiceProvider =
+    Provider<SemanticEmbeddingService>((ref) {
+  return SemanticEmbeddingService(ref.watch(secureKeyStorageProvider));
+});
+
+/// Local Cosine Similarity search service with offline keyword fallback.
+final semanticSearchServiceProvider = Provider<SemanticSearchService>((ref) {
+  return SemanticSearchService(
+    ref.watch(sessionRepositoryProvider),
+    ref.watch(semanticEmbeddingServiceProvider),
+  );
 });

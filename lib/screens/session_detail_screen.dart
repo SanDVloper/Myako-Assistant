@@ -1,4 +1,5 @@
 import 'dart:io';
+import 'dart:typed_data';
 
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -114,6 +115,39 @@ class _SessionDetailScreenState extends ConsumerState<SessionDetailScreen>
 
       final parsed = AiResponseParser.parse(rawJson, sessionId: _sessionId);
       await repo.saveAiProcessingResult(sessionId: _sessionId, result: parsed);
+
+      // Best-effort semantic indexing so local Cosine Similarity search works.
+      try {
+        final savedSegments =
+            await repo.getTranscriptSegmentsBySession(_sessionId);
+        if (savedSegments.isNotEmpty) {
+          if (mounted) {
+            setState(
+              () => _progressMessage = 'Mengindeks vektor Semantic Search...',
+            );
+          }
+          final vectors = await ref
+              .read(semanticEmbeddingServiceProvider)
+              .embedTextsBatch(
+                savedSegments
+                    .map((s) => s.textContent)
+                    .toList(growable: false),
+              );
+          final map = <int, Float32List>{};
+          for (var i = 0; i < savedSegments.length && i < vectors.length; i++) {
+            final segId = savedSegments[i].id;
+            final vec = vectors[i];
+            if (segId != null && vec != null) {
+              map[segId] = vec;
+            }
+          }
+          if (map.isNotEmpty) {
+            await repo.updateSegmentEmbeddings(map);
+          }
+        }
+      } catch (_) {
+        // Keep AI transcript & summary intact even if embedding quota fails.
+      }
 
       ref.invalidate(sessionByIdProvider(_sessionId));
       ref.invalidate(sessionTranscriptProvider(_sessionId));

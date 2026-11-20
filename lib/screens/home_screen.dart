@@ -7,6 +7,7 @@ import '../models/semester.dart';
 import '../providers/app_providers.dart';
 import 'class_recorder_screen.dart';
 import 'course_detail_screen.dart';
+import 'semantic_search_screen.dart';
 import 'settings_screen.dart';
 
 /// Main dashboard displaying semantic search bar, active semester, and courses.
@@ -138,15 +139,11 @@ class HomeScreen extends ConsumerWidget {
       child: InkWell(
         borderRadius: BorderRadius.circular(14),
         onTap: () {
-          ScaffoldMessenger.of(context)
-            ..hideCurrentSnackBar()
-            ..showSnackBar(
-              const SnackBar(
-                content: Text(
-                  'Pencarian berbasis makna (Semantic Search) aktif setelah rekaman diproses AI.',
-                ),
-              ),
-            );
+          Navigator.of(context).push(
+            MaterialPageRoute<void>(
+              builder: (_) => const SemanticSearchScreen(),
+            ),
+          );
         },
         child: Padding(
           padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 13),
