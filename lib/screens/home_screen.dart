@@ -5,6 +5,8 @@ import '../core/theme/app_theme.dart';
 import '../models/course.dart';
 import '../models/semester.dart';
 import '../providers/app_providers.dart';
+import 'class_recorder_screen.dart';
+import 'course_detail_screen.dart';
 import 'settings_screen.dart';
 
 /// Main dashboard displaying semantic search bar, active semester, and courses.
@@ -288,12 +290,12 @@ class HomeScreen extends ConsumerWidget {
           children: [
             Expanded(
               child: OutlinedButton.icon(
-                onPressed: () => _handlePendingPart2Action(
+                onPressed: () => _handleQuickLectureAction(
                   context,
                   ref,
                   courses,
                   activeSemester,
-                  actionLabel: 'Upload Audio',
+                  isRecord: false,
                 ),
                 icon: const Icon(Icons.upload_file_outlined),
                 label: const Text('Upload Audio'),
@@ -303,12 +305,12 @@ class HomeScreen extends ConsumerWidget {
             Expanded(
               flex: 2,
               child: FilledButton.icon(
-                onPressed: () => _handlePendingPart2Action(
+                onPressed: () => _handleQuickLectureAction(
                   context,
                   ref,
                   courses,
                   activeSemester,
-                  actionLabel: 'Rekam Kuliah',
+                  isRecord: true,
                 ),
                 icon: const Icon(Icons.mic_none_rounded),
                 label: const Text('Mulai Rekam Kuliah'),
@@ -320,26 +322,123 @@ class HomeScreen extends ConsumerWidget {
     );
   }
 
-  void _handlePendingPart2Action(
+  Future<void> _handleQuickLectureAction(
     BuildContext context,
     WidgetRef ref,
     List<Course> courses,
     Semester? activeSemester, {
-    required String actionLabel,
-  }) {
-    if (courses.isEmpty && activeSemester?.id != null) {
-      _showCourseDialog(context, ref, semesterId: activeSemester!.id!);
+    required bool isRecord,
+  }) async {
+    if (courses.isEmpty) {
+      if (activeSemester?.id != null) {
+        await _showCourseDialog(
+          context,
+          ref,
+          semesterId: activeSemester!.id!,
+        );
+      }
       return;
     }
-    ScaffoldMessenger.of(context)
-      ..hideCurrentSnackBar()
-      ..showSnackBar(
-        SnackBar(
-          content: Text(
-            'Fitur $actionLabel offline & foto papan tulis siap diaktifkan pada Part 2.',
-          ),
+
+    Course? selectedCourse;
+    if (courses.length == 1) {
+      selectedCourse = courses.first;
+    } else {
+      selectedCourse = await _pickCourseForAction(
+        context,
+        courses,
+        title: isRecord ? 'Pilih Mata Kuliah untuk Direkam' : 'Impor Audio ke Mata Kuliah',
+      );
+    }
+
+    if (selectedCourse == null || selectedCourse.id == null || !context.mounted) {
+      return;
+    }
+
+    if (isRecord) {
+      await Navigator.of(context).push<bool>(
+        MaterialPageRoute<bool>(
+          builder: (_) => ClassRecorderScreen(course: selectedCourse!),
         ),
       );
+      return;
+    }
+
+    try {
+      final created = await ref
+          .read(audioImportServiceProvider)
+          .pickAndImportAudio(courseId: selectedCourse.id!);
+      if (created != null && context.mounted) {
+        ref.invalidate(courseSessionsProvider(selectedCourse.id!));
+        ref.invalidate(coursesProvider);
+        ref.invalidate(storageUsageBytesProvider);
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Audio "${created.title}" berhasil diimpor.')),
+        );
+        await Navigator.of(context).push<void>(
+          MaterialPageRoute<void>(
+            builder: (_) => CourseDetailScreen(course: selectedCourse!),
+          ),
+        );
+      }
+    } catch (e) {
+      if (context.mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Gagal mengimpor audio: $e')),
+        );
+      }
+    }
+  }
+
+  Future<Course?> _pickCourseForAction(
+    BuildContext context,
+    List<Course> courses, {
+    required String title,
+  }) async {
+    return showModalBottomSheet<Course>(
+      context: context,
+      builder: (sheetContext) => SafeArea(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Padding(
+              padding: const EdgeInsets.fromLTRB(16, 14, 16, 8),
+              child: Align(
+                alignment: Alignment.centerLeft,
+                child: Text(
+                  title,
+                  style: const TextStyle(
+                    fontSize: 15.5,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+              ),
+            ),
+            const Divider(),
+            Flexible(
+              child: ListView.builder(
+                shrinkWrap: true,
+                itemCount: courses.length,
+                itemBuilder: (_, index) {
+                  final course = courses[index];
+                  return ListTile(
+                    leading: CircleAvatar(
+                      radius: 8,
+                      backgroundColor: AppTheme.parseHexColor(course.colorHex),
+                    ),
+                    title: Text(course.name),
+                    subtitle: course.lecturerName != null
+                        ? Text(course.lecturerName!)
+                        : null,
+                    onTap: () => Navigator.pop(sheetContext, course),
+                  );
+                },
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
   }
 
   // ---------------------------------------------------------------------------
@@ -667,15 +766,11 @@ class _CourseCard extends StatelessWidget {
       child: InkWell(
         borderRadius: BorderRadius.circular(14),
         onTap: () {
-          ScaffoldMessenger.of(context)
-            ..hideCurrentSnackBar()
-            ..showSnackBar(
-              SnackBar(
-                content: Text(
-                  'Daftar sesi "${course.name}" & mode UTS/UAS akan terhubung di Part 2–4.',
-                ),
-              ),
-            );
+          Navigator.of(context).push(
+            MaterialPageRoute<void>(
+              builder: (_) => CourseDetailScreen(course: course),
+            ),
+          );
         },
         child: Padding(
           padding: const EdgeInsets.all(14),

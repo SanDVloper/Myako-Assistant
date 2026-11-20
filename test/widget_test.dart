@@ -6,9 +6,13 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:myako/core/security/secure_key_storage.dart';
 import 'package:myako/data/app_database.dart';
 import 'package:myako/data/course_repository.dart';
+import 'package:myako/data/session_repository.dart';
 import 'package:myako/main.dart';
+import 'package:myako/models/lecture_session.dart';
+import 'package:myako/models/session_annotation.dart';
 import 'package:myako/models/transcript_segment.dart';
 import 'package:myako/providers/app_providers.dart';
+import 'package:myako/services/lecture_recorder_service.dart';
 import 'package:sqflite_common_ffi/sqflite_ffi.dart';
 
 class _InMemorySecureKeyStorage extends SecureKeyStorage {
@@ -153,6 +157,92 @@ void main() {
       await repo.deleteCourse(created.id!);
       courses = await repo.getCoursesBySemester(semesterId);
       expect(courses, isEmpty);
+    });
+
+    test('SessionRepository CRUD and chronological annotations work properly',
+        () async {
+      final sessionRepo = SessionRepository(testDb);
+      final active = await repo.getActiveSemester();
+      final course = await repo.createCourse(
+        semesterId: active!.id!,
+        name: 'Basis Data',
+        colorHex: '#38BDF8',
+      );
+
+      final session = await sessionRepo.createSession(
+        LectureSession(
+          courseId: course.id!,
+          title: 'Pertemuan 1',
+          recordedAt: DateTime(2026, 11, 20, 9, 0),
+          durationMs: 0,
+          audioPath: '',
+        ),
+      );
+      expect(session.id, isNotNull);
+
+      await sessionRepo.updateSessionAfterRecording(
+        sessionId: session.id!,
+        durationMs: 185000,
+        audioPath: 'recordings/test_lecture.m4a',
+        title: 'Pertemuan 1 - ERD',
+      );
+
+      final updated = await sessionRepo.getSessionById(session.id!);
+      expect(updated, isNotNull);
+      expect(updated!.durationMs, 185000);
+      expect(updated.title, 'Pertemuan 1 - ERD');
+
+      // Add out-of-order annotations and verify chronological timestamp sort.
+      await sessionRepo.addAnnotation(
+        SessionAnnotation(
+          sessionId: session.id!,
+          type: AnnotationType.bookmark.value,
+          timestampMs: 90000,
+          contentText: 'Keluar di UTS',
+          createdAt: DateTime(2026, 11, 20, 9, 1),
+        ),
+      );
+      await sessionRepo.addAnnotation(
+        SessionAnnotation(
+          sessionId: session.id!,
+          type: AnnotationType.textNote.value,
+          timestampMs: 15000,
+          contentText: 'Definisi Primary Key',
+          createdAt: DateTime(2026, 11, 20, 9, 0),
+        ),
+      );
+      await sessionRepo.addAnnotation(
+        SessionAnnotation(
+          sessionId: session.id!,
+          type: AnnotationType.photo.value,
+          timestampMs: 45000,
+          imagePath: 'whiteboards/wb_sample.jpg',
+          createdAt: DateTime(2026, 11, 20, 9, 0),
+        ),
+      );
+
+      final annotations =
+          await sessionRepo.getAnnotationsBySession(session.id!);
+      expect(annotations.length, 3);
+      expect(annotations[0].typeEnum, AnnotationType.textNote);
+      expect(annotations[1].typeEnum, AnnotationType.photo);
+      expect(annotations[2].typeEnum, AnnotationType.bookmark);
+
+      await sessionRepo.deleteAnnotation(annotations[1].id!);
+      final remaining = await sessionRepo.getAnnotationsBySession(session.id!);
+      expect(remaining.length, 2);
+
+      await sessionRepo.deleteSession(session.id!);
+      final sessionsAfterDelete =
+          await sessionRepo.getSessionsByCourse(course.id!);
+      expect(sessionsAfterDelete, isEmpty);
+    });
+
+    test('LectureRecorderService.formatDurationMs formats MM:SS and HH:MM:SS',
+        () {
+      expect(LectureRecorderService.formatDurationMs(0), '00:00');
+      expect(LectureRecorderService.formatDurationMs(65000), '01:05');
+      expect(LectureRecorderService.formatDurationMs(3661000), '01:01:01');
     });
   });
 

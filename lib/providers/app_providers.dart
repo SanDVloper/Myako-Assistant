@@ -4,8 +4,13 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../core/security/secure_key_storage.dart';
 import '../data/app_database.dart';
 import '../data/course_repository.dart';
+import '../data/session_repository.dart';
 import '../models/course.dart';
+import '../models/lecture_session.dart';
 import '../models/semester.dart';
+import '../models/session_annotation.dart';
+import '../services/audio_import_service.dart';
+import '../services/whiteboard_capture_service.dart';
 
 /// Singleton database provider.
 final appDatabaseProvider = Provider<AppDatabase>((ref) {
@@ -15,6 +20,22 @@ final appDatabaseProvider = Provider<AppDatabase>((ref) {
 /// Repository provider for Semesters, Courses, and local storage stats.
 final courseRepositoryProvider = Provider<CourseRepository>((ref) {
   return CourseRepository(ref.watch(appDatabaseProvider));
+});
+
+/// Repository provider for Lecture Sessions and Timestamped Annotations.
+final sessionRepositoryProvider = Provider<SessionRepository>((ref) {
+  return SessionRepository(ref.watch(appDatabaseProvider));
+});
+
+/// Service provider for importing external lecture audio files.
+final audioImportServiceProvider = Provider<AudioImportService>((ref) {
+  return AudioImportService(ref.watch(sessionRepositoryProvider));
+});
+
+/// Service provider for compressed whiteboard captures and quick notes.
+final whiteboardCaptureServiceProvider =
+    Provider<WhiteboardCaptureService>((ref) {
+  return WhiteboardCaptureService(ref.watch(sessionRepositoryProvider));
 });
 
 /// Encrypted key storage provider backed by Android Keystore.
@@ -238,4 +259,16 @@ final coursesProvider = AsyncNotifierProvider<CoursesNotifier, List<Course>>(
 /// Total private app storage used by SQLite DB, audio files, and photos.
 final storageUsageBytesProvider = FutureProvider<int>((ref) {
   return ref.read(courseRepositoryProvider).calculateLocalStorageUsageBytes();
+});
+
+/// Lecture sessions belonging to a specific course ID.
+final courseSessionsProvider =
+    FutureProvider.family<List<LectureSession>, int>((ref, courseId) {
+  return ref.read(sessionRepositoryProvider).getSessionsByCourse(courseId);
+});
+
+/// Timestamped annotations belonging to a specific session ID.
+final sessionAnnotationsProvider =
+    FutureProvider.family<List<SessionAnnotation>, int>((ref, sessionId) {
+  return ref.read(sessionRepositoryProvider).getAnnotationsBySession(sessionId);
 });

@@ -99,7 +99,7 @@ class SessionRepository {
     final annotationRows = await db.query(
       'session_annotations',
       columns: ['image_path'],
-      where: 'session_id = ? AND image_path IS NOT NULL AND image_path != ""',
+      where: "session_id = ? AND image_path IS NOT NULL AND image_path != ''",
       whereArgs: [sessionId],
     );
 
