@@ -197,7 +197,7 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
                       'Dipakai untuk transkripsi multimodal, analisis foto papan tulis, rangkuman, kuis, dan semantic search.',
                   hasStoredKey: config.hasGeminiKey,
                   maskedKey: config.maskedGeminiKey,
-                  hintText: 'Tempel Gemini API Key (AIza...)',
+                  hintText: 'Tempel Gemini API Key (AQ... / AIza...)',
                   controller: _geminiController,
                   obscureText: _obscureGemini,
                   isTesting: _isTestingGemini,
@@ -310,7 +310,7 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
               segments: const [
                 ButtonSegment(
                   value: 'gemini',
-                  label: Text('Gemini 2.5 Flash'),
+                  label: Text('Gemini 3.8 Flash'),
                   icon: Icon(Icons.auto_awesome),
                 ),
                 ButtonSegment(

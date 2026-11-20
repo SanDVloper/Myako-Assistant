@@ -5,7 +5,7 @@ import 'package:dio/dio.dart';
 import '../core/security/secure_key_storage.dart';
 
 /// Generates compact 256-dimensional Float32 embeddings via Gemini
-/// `text-embedding-004` (~1 KB per segment) for local Cosine Similarity search.
+/// `gemini-embedding-001` (~1 KB per segment) for local Cosine Similarity search.
 class SemanticEmbeddingService {
   SemanticEmbeddingService(
     this._keyStorage, {
@@ -19,7 +19,7 @@ class SemanticEmbeddingService {
             );
 
   static const String _baseUrl =
-      'https://generativelanguage.googleapis.com/v1beta/models/text-embedding-004';
+      'https://generativelanguage.googleapis.com/v1beta/models/gemini-embedding-001';
   static const int outputDimensions = 256;
   static const int _batchSize = 50;
 
@@ -46,7 +46,7 @@ class SemanticEmbeddingService {
           validateStatus: (status) => status != null && status < 500,
         ),
         data: {
-          'model': 'models/text-embedding-004',
+          'model': 'models/gemini-embedding-001',
           'taskType': 'RETRIEVAL_QUERY',
           'outputDimensionality': outputDimensions,
           'content': {
@@ -86,7 +86,7 @@ class SemanticEmbeddingService {
         final requests = chunk
             .map(
               (text) => {
-                'model': 'models/text-embedding-004',
+                'model': 'models/gemini-embedding-001',
                 'taskType': 'RETRIEVAL_DOCUMENT',
                 'outputDimensionality': outputDimensions,
                 'content': {

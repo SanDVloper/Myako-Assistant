@@ -10,7 +10,8 @@ import '../models/session_annotation.dart';
 import 'lecture_recorder_service.dart';
 
 /// Multimodal AI processor connecting offline lecture audio, compressed
-/// whiteboard photos, and manual quick notes to Gemini 2.5 Flash or Groq API.
+/// whiteboard photos, and manual quick notes to Gemini 3.8 Flash (with fallback)
+/// or Groq API.
 class AiLectureProcessorService {
   AiLectureProcessorService(
     this._keyStorage, {
@@ -26,6 +27,13 @@ class AiLectureProcessorService {
 
   static const String _geminiBaseUrl = 'https://generativelanguage.googleapis.com';
   static const String _groqBaseUrl = 'https://api.groq.com/openai/v1';
+  static const List<String> _geminiFlashModels = [
+    'gemini-3.8-flash',
+    'gemini-flash-latest',
+    'gemini-3.5-flash',
+    'gemini-3-flash-preview',
+    'gemini-3.1-flash-lite',
+  ];
 
   final SecureKeyStorage _keyStorage;
   final Dio _dio;
@@ -79,7 +87,7 @@ class AiLectureProcessorService {
   }
 
   // ---------------------------------------------------------------------------
-  // Google Gemini 2.5 Flash Multimodal Pipeline
+  // Google Gemini Multimodal Pipeline (3.8 Flash + Automatic Model Fallback)
   // ---------------------------------------------------------------------------
 
   Future<String> _processWithGemini({
@@ -118,33 +126,54 @@ class AiLectureProcessorService {
         courseName: courseName,
       );
 
-      final response = await _dio.post<Map<String, dynamic>>(
-        '$_geminiBaseUrl/v1beta/models/gemini-2.5-flash:generateContent',
-        options: Options(
-          headers: {
-            'x-goog-api-key': apiKey,
-            'Content-Type': 'application/json',
-          },
-          validateStatus: (status) => status != null && status < 500,
-        ),
-        data: {
-          'contents': [
-            {'role': 'user', 'parts': parts},
-          ],
-          'generationConfig': {
-            'responseMimeType': 'application/json',
-            'temperature': 0.2,
-          },
-        },
-      );
+      String? lastError;
+      for (var idx = 0; idx < _geminiFlashModels.length; idx++) {
+        final modelName = _geminiFlashModels[idx];
+        if (idx > 0) {
+          onProgress?.call('Mencoba model alternatif ($modelName)...');
+        }
 
-      if (response.statusCode != 200 || response.data == null) {
-        final msg = _extractApiError(response.data) ??
-            'Gemini merespons kode ${response.statusCode ?? '-'}';
-        throw StateError(_sanitizeSecrets(msg, [apiKey]));
+        final response = await _dio.post<Map<String, dynamic>>(
+          '$_geminiBaseUrl/v1beta/models/$modelName:generateContent',
+          options: Options(
+            headers: {
+              'x-goog-api-key': apiKey,
+              'Content-Type': 'application/json',
+            },
+            validateStatus: (status) => status != null,
+          ),
+          data: {
+            'contents': [
+              {'role': 'user', 'parts': parts},
+            ],
+            'generationConfig': {
+              'responseMimeType': 'application/json',
+              'temperature': 0.2,
+            },
+          },
+        );
+
+        final statusCode = response.statusCode ?? 0;
+        if (statusCode == 200 && response.data != null) {
+          return _extractGeminiText(response.data!);
+        }
+
+        lastError = _extractApiError(response.data) ??
+            'Gemini ($modelName) merespons kode ${response.statusCode ?? '-'}';
+
+        final shouldRetryAnotherModel =
+            statusCode == 404 || statusCode == 429 || statusCode >= 500;
+        if (!shouldRetryAnotherModel) {
+          break;
+        }
       }
 
-      return _extractGeminiText(response.data!);
+      throw StateError(
+        _sanitizeSecrets(
+          lastError ?? 'Seluruh model Gemini sedang tidak tersedia.',
+          [apiKey],
+        ),
+      );
     } on DioException catch (e) {
       final serverMsg = _extractApiError(e.response?.data);
       throw StateError(
